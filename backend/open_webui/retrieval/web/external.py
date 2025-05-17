@@ -20,7 +20,7 @@ def search_external(
         response = requests.post(
             external_url,
             headers={
-                "User-Agent": "AnswerAI (https://github.com/open-webui/open-webui) RAG Bot",
+                "User-Agent": "AnswerAI (https://github.com/answerai/answerai) RAG Bot",
                 "Authorization": f"Bearer {external_api_key}",
             },
             json={

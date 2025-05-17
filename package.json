@@ -1,5 +1,5 @@
 {
-	"name": "open-webui",
+	"name": "answerai",
 	"version": "0.6.9",
 	"private": true,
 	"scripts": {
@@ -93,7 +93,8 @@
 		"katex": "^0.16.21",
 		"kokoro-js": "^1.1.1",
 		"marked": "^9.1.0",
-		"mermaid": "^11.6.0",
+		"mermaid": "^10.9.0",
+		"onnxruntime-web": "^1.17.0",
 		"paneforge": "^0.0.6",
 		"panzoom": "^9.4.3",
 		"prosemirror-commands": "^1.6.0",

@@ -32,7 +32,7 @@ class ExternalLoader(BaseLoader):
                 response = requests.post(
                     self.external_url,
                     headers={
-                        "User-Agent": "AnswerAI (https://github.com/open-webui/open-webui) RAG Bot",
+                        "User-Agent": "AnswerAI (https://github.com/answerai/answerai) RAG Bot",
                         "Authorization": f"Bearer {self.external_api_key}",
                     },
                     json={

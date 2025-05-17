@@ -292,7 +292,7 @@
 				'aboutus',
 				'softwareinfo',
 				'timothyjaeryangbaek',
-				'openwebui',
+				'answerai',
 				'release',
 				'updates',
 				'updateinfo',

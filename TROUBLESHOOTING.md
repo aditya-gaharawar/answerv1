@@ -15,7 +15,7 @@ If you're experiencing connection issues, it’s often due to the AnswerAI docke
 **Example Docker Command**:
 
 ```bash
-docker run -d --network=host -v open-webui:/app/backend/data -e OLLAMA_BASE_URL=http://127.0.0.1:11434 --name open-webui --restart always ghcr.io/open-webui/open-webui:main
+docker run -d --network=host -v answerai:/app/backend/data -e OLLAMA_BASE_URL=http://127.0.0.1:11434 --name answerai --restart always ghcr.io/answerai/answerai:main
 ```
 
 ### Error on Slow Responses for Ollama

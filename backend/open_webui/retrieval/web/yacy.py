@@ -61,7 +61,7 @@ def search_yacy(
         query_url,
         auth=yacy_auth,
         headers={
-            "User-Agent": "AnswerAI (https://github.com/open-webui/open-webui) RAG Bot",
+            "User-Agent": "AnswerAI (https://github.com/answerai/answerai) RAG Bot",
             "Accept": "text/html",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "en-US,en;q=0.5",

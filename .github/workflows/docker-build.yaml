@@ -11,14 +11,13 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # IMAGE_NAME will be set from github.repository in lowercase in each job
 
 jobs:
   build-main-image:
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
-      packages: write # Correctly set for build job
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -27,10 +26,14 @@ jobs:
           - linux/arm64
 
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Prepare
         run: |
@@ -44,7 +47,6 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        id: buildx # Give this step an id to reference its outputs if needed, though not used here.
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
@@ -77,7 +79,7 @@ jobs:
             type=ref,event=branch
             ${{ github.ref_type == 'tag' && 'type=raw,value=main' || '' }}
           flavor: |
-            prefix=cache-${{ matrix.platform }}-${{ github.run_id }}-
+            prefix=cache-${{ matrix.platform }}-
             latest=false
 
       - name: Build Docker image (latest)
@@ -98,16 +100,7 @@ jobs:
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
-          # Ensure digest is not empty
-          if [ -z "$digest" ]; then
-            echo "Error: Digest is empty. Build might have failed."
-            exit 1
-          fi
-          echo "Digest: $digest"
-          # Sanitize the digest to be used as a filename (remove potential colons if full sha256:hash is used)
-          filename=$(echo "$digest" | sed 's/sha256://')
-          echo -n "$digest" > "/tmp/digests/$filename" # Store the full digest string
-        shell: bash
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
@@ -121,19 +114,23 @@ jobs:
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
-      packages: write # Correctly set for build job
+      packages: write
     strategy:
       fail-fast: false
       matrix:
         platform:
           - linux/amd64
-          # - linux/arm64 # CUDA is typically not for ARM, adjust if needed
+          - linux/arm64
 
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Prepare
         run: |
@@ -162,14 +159,15 @@ jobs:
         with:
           images: ${{ env.FULL_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-cuda
-            type=ref,event=tag,suffix=-cuda
-            type=sha,prefix=git-,suffix=-cuda
-            type=semver,pattern={{version}},suffix=-cuda
-            type=semver,pattern={{major}}.{{minor}},suffix=-cuda
-            type=raw,enable=${{ github.ref == 'refs/heads/main' }},value=cuda
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=git-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,enable=${{ github.ref == 'refs/heads/main' }},prefix=,suffix=,value=cuda
           flavor: |
-            latest=${{ github.ref == 'refs/heads/main' && 'false' || 'false' }} # No 'latest-cuda' unless specifically desired
+            latest=${{ github.ref == 'refs/heads/main' }}
+            suffix=-cuda,onlatest=true
 
       - name: Extract metadata for Docker cache
         id: cache-meta
@@ -180,7 +178,7 @@ jobs:
             type=ref,event=branch
             ${{ github.ref_type == 'tag' && 'type=raw,value=main' || '' }}
           flavor: |
-            prefix=cache-cuda-${{ matrix.platform }}-${{ github.run_id }}-
+            prefix=cache-cuda-${{ matrix.platform }}-
             latest=false
 
       - name: Build Docker image (cuda)
@@ -188,8 +186,6 @@ jobs:
         id: build
         with:
           context: .
-          # Assuming your Dockerfile for CUDA is named Dockerfile.cuda or similar
-          # file: ./Dockerfile.cuda 
           push: true
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -204,14 +200,7 @@ jobs:
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
-          if [ -z "$digest" ]; then
-            echo "Error: Digest is empty for CUDA build."
-            exit 1
-          fi
-          echo "Digest (CUDA): $digest"
-          filename=$(echo "$digest" | sed 's/sha256://')
-          echo -n "$digest" > "/tmp/digests/$filename"
-        shell: bash
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
@@ -225,7 +214,7 @@ jobs:
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
-      packages: write # Correctly set for build job
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -234,10 +223,14 @@ jobs:
           - linux/arm64
 
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Prepare
         run: |
@@ -266,14 +259,15 @@ jobs:
         with:
           images: ${{ env.FULL_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-ollama
-            type=ref,event=tag,suffix=-ollama
-            type=sha,prefix=git-,suffix=-ollama
-            type=semver,pattern={{version}},suffix=-ollama
-            type=semver,pattern={{major}}.{{minor}},suffix=-ollama
-            type=raw,enable=${{ github.ref == 'refs/heads/main' }},value=ollama
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=git-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,enable=${{ github.ref == 'refs/heads/main' }},prefix=,suffix=,value=ollama
           flavor: |
-            latest=${{ github.ref == 'refs/heads/main' && 'false' || 'false' }}
+            latest=${{ github.ref == 'refs/heads/main' }}
+            suffix=-ollama,onlatest=true
 
       - name: Extract metadata for Docker cache
         id: cache-meta
@@ -284,7 +278,7 @@ jobs:
             type=ref,event=branch
             ${{ github.ref_type == 'tag' && 'type=raw,value=main' || '' }}
           flavor: |
-            prefix=cache-ollama-${{ matrix.platform }}-${{ github.run_id }}-
+            prefix=cache-ollama-${{ matrix.platform }}-
             latest=false
 
       - name: Build Docker image (ollama)
@@ -292,8 +286,6 @@ jobs:
         id: build
         with:
           context: .
-          # Assuming your Dockerfile for Ollama is named Dockerfile.ollama or similar
-          # file: ./Dockerfile.ollama
           push: true
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -308,14 +300,7 @@ jobs:
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
-          if [ -z "$digest" ]; then
-            echo "Error: Digest is empty for Ollama build."
-            exit 1
-          fi
-          echo "Digest (Ollama): $digest"
-          filename=$(echo "$digest" | sed 's/sha256://')
-          echo -n "$digest" > "/tmp/digests/$filename"
-        shell: bash
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
@@ -328,14 +313,15 @@ jobs:
   merge-main-images:
     runs-on: ubuntu-latest
     needs: [build-main-image]
-    permissions:
-      contents: read  # Minimum needed for checkout if any, usually not for imagetools
-      packages: write # <<< THIS WAS MISSING AND IS CRITICAL
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -343,10 +329,6 @@ jobs:
           pattern: digests-main-*
           path: /tmp/digests
           merge-multiple: true
-
-      - name: List downloaded digests # For debugging
-        run: ls -l /tmp/digests
-        shell: bash
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -362,9 +344,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.FULL_IMAGE_NAME }} # Use the FULL_IMAGE_NAME set in this job
-          # Ensure DOCKER_METADATA_OUTPUT_JSON is populated for the next step
-          # by re-defining tags consistent with how the manifest should be tagged
+          images: ${{ env.FULL_IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -376,57 +356,26 @@ jobs:
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
-        env: # Make metadata available to the script
-            DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
         run: |
-          echo "Creating manifest for: ${{ env.FULL_IMAGE_NAME }}"
-          echo "Available digests in /tmp/digests:"
-          cat * # Show content of digest files for debugging
-          
-          # Construct the list of images with digests
-          # Each file in /tmp/digests should contain a single digest string
-          digest_args=""
-          for f in *; do
-            digest_content=$(cat "$f")
-            # Validate digest_content
-            if [[ "$digest_content" == sha256:* ]]; then
-              digest_args="$digest_args ${{ env.FULL_IMAGE_NAME }}@$digest_content"
-            else
-              echo "Warning: Invalid digest format in file $f: $digest_content"
-            fi
-          done
-
-          if [ -z "$digest_args" ]; then
-            echo "Error: No valid digests found to create manifest."
-            exit 1
-          fi
-          
-          echo "Tags to apply from metadata: $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
-          echo "Digests to include: $digest_args"
-
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $digest_args
-        shell: bash
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.FULL_IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Inspect image
-        if: always() # Run even if previous steps fail for debugging
         run: |
-          echo "Inspecting image: ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}"
-          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}
-        shell: bash
+          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
   merge-cuda-images:
     runs-on: ubuntu-latest
     needs: [build-cuda-image]
-    permissions:
-      contents: read
-      packages: write # <<< THIS WAS MISSING AND IS CRITICAL
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -434,10 +383,6 @@ jobs:
           pattern: digests-cuda-*
           path: /tmp/digests
           merge-multiple: true
-      
-      - name: List downloaded digests # For debugging
-        run: ls -l /tmp/digests
-        shell: bash
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -449,62 +394,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker images (cuda tag)
+      - name: Extract metadata for Docker images (default latest tag)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.FULL_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-cuda
-            type=ref,event=tag,suffix=-cuda
-            type=sha,prefix=git-,suffix=-cuda
-            type=semver,pattern={{version}},suffix=-cuda
-            type=semver,pattern={{major}}.{{minor}},suffix=-cuda
-            type=raw,enable=${{ github.ref == 'refs/heads/main' }},value=cuda
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=git-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,enable=${{ github.ref == 'refs/heads/main' }},prefix=,suffix=,value=cuda
           flavor: |
-            latest=${{ github.ref == 'refs/heads/main' && 'false' || 'false' }}
+            latest=${{ github.ref == 'refs/heads/main' }}
+            suffix=-cuda,onlatest=true
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
-        env:
-            DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
         run: |
-          echo "Creating CUDA manifest for: ${{ env.FULL_IMAGE_NAME }}"
-          echo "Available digests in /tmp/digests for CUDA:"
-          cat *
-          digest_args=""
-          for f in *; do
-            digest_content=$(cat "$f")
-            if [[ "$digest_content" == sha256:* ]]; then
-              digest_args="$digest_args ${{ env.FULL_IMAGE_NAME }}@$digest_content"
-            else
-              echo "Warning: Invalid digest format in file $f for CUDA: $digest_content"
-            fi
-          done
-          if [ -z "$digest_args" ]; then echo "Error: No valid digests found for CUDA manifest."; exit 1; fi
-          
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $digest_args
-        shell: bash
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.FULL_IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Inspect image
-        if: always()
         run: |
-          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version || 'cuda' }}
-        shell: bash
+          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
   merge-ollama-images:
     runs-on: ubuntu-latest
     needs: [build-ollama-image]
-    permissions:
-      contents: read
-      packages: write # <<< THIS WAS MISSING AND IS CRITICAL
     steps:
+      # GitHub Packages requires the entire repository name to be in lowercase
+      # although the repository owner has a lowercase username, this prevents some people from running actions after forking
       - name: Set repository and image name to lowercase
         run: |
-          echo "IMAGE_NAME=${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner,, }}/${{ github.event.repository.name,, }}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "FULL_IMAGE_NAME=ghcr.io/${IMAGE_NAME,,}" >>${GITHUB_ENV}
+        env:
+          IMAGE_NAME: '${{ github.repository }}'
 
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -513,10 +440,6 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
-      - name: List downloaded digests # For debugging
-        run: ls -l /tmp/digests
-        shell: bash
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -527,47 +450,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker images (ollama tag)
+      - name: Extract metadata for Docker images (default ollama tag)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.FULL_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-ollama
-            type=ref,event=tag,suffix=-ollama
-            type=sha,prefix=git-,suffix=-ollama
-            type=semver,pattern={{version}},suffix=-ollama
-            type=semver,pattern={{major}}.{{minor}},suffix=-ollama
-            type=raw,enable=${{ github.ref == 'refs/heads/main' }},value=ollama
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=git-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,enable=${{ github.ref == 'refs/heads/main' }},prefix=,suffix=,value=ollama
           flavor: |
-            latest=${{ github.ref == 'refs/heads/main' && 'false' || 'false' }}
+            latest=${{ github.ref == 'refs/heads/main' }}
+            suffix=-ollama,onlatest=true
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
-        env:
-            DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
         run: |
-          echo "Creating Ollama manifest for: ${{ env.FULL_IMAGE_NAME }}"
-          echo "Available digests in /tmp/digests for Ollama:"
-          cat *
-          digest_args=""
-          for f in *; do
-            digest_content=$(cat "$f")
-            if [[ "$digest_content" == sha256:* ]]; then
-              digest_args="$digest_args ${{ env.FULL_IMAGE_NAME }}@$digest_content"
-            else
-              echo "Warning: Invalid digest format in file $f for Ollama: $digest_content"
-            fi
-          done
-          if [ -z "$digest_args" ]; then echo "Error: No valid digests found for Ollama manifest."; exit 1; fi
-          
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $digest_args
-        shell: bash
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.FULL_IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Inspect image
-        if: always()
         run: |
-          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version || 'ollama' }}
-        shell: bash
+          docker buildx imagetools inspect ${{ env.FULL_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
